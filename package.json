@@ -1,0 +1,13 @@
+{
+  "name": "ws-chat",
+  "version": "1.0.0",
+  "description": "Real-time WebSocket chat server with rate limiting and message persistence",
+  "main": "chat-server.js",
+  "scripts": {
+    "start": "node chat-server.js",
+    "dev": "node --watch chat-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

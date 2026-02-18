@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WS Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ────────────────────────────────────────────────────────
+     DESIGN DIRECTION: Industrial Terminal
+     Monochrome base, amber accent, scanline texture.
+     Feels like staring into a server room's old CRT monitor.
+  ──────────────────────────────────────────────────────── */
+  :root {
+    --bg:        #0a0a08;
+    --bg2:       #111110;
+    --bg3:       #1a1a17;
+    --border:    #2a2a24;
+    --amber:     #ffb000;
+    --amber-dim: #8a6000;
+    --amber-glow:#ffb00033;
+    --green:     #4caf50;
+    --red:       #e53935;
+    --text:      #e8e4d0;
+    --text-dim:  #6b6755;
+    --mono:      'JetBrains Mono', monospace;
+    --display:   'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* scanline overlay */
+    background-image: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+  }
+
+  /* ── Top bar ─────────────────────────────────────────── */
+  #topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+  #topbar h1 {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: var(--amber);
+    text-transform: uppercase;
+  }
+  #status-bar {
+    display: flex; align-items: center; gap: 10px;
+  }
+  #status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  #status-dot.connected {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+  #status-dot.connecting { background: var(--amber); animation: blink 0.6s infinite; }
+  #status-dot.error      { background: var(--red); }
+  #status-text { font-size: 11px; color: var(--text-dim); letter-spacing: 0.08em; }
+  #online-count {
+    font-size: 11px; color: var(--amber-dim);
+    padding: 2px 8px; border: 1px solid var(--border);
+    letter-spacing: 0.06em;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* ── Main layout ─────────────────────────────────────── */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Join screen ─────────────────────────────────────── */
+  #join-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 24px;
+    padding: 40px;
+  }
+  #join-screen .label {
+    font-size: 11px; letter-spacing: 0.15em;
+    color: var(--text-dim); text-transform: uppercase;
+  }
+  #join-screen h2 {
+    font-family: var(--display);
+    font-size: 28px; font-weight: 800;
+    color: var(--text);
+    letter-spacing: 0.04em;
+  }
+  .join-box {
+    display: flex; gap: 0;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    width: 100%; max-width: 420px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .join-box:focus-within {
+    border-color: var(--amber);
+    box-shadow: 0 0 0 1px var(--amber), 0 0 20px var(--amber-glow);
+  }
+  #username-input {
+    flex: 1; background: var(--bg3);
+    border: none; outline: none;
+    color: var(--text); font-family: var(--mono);
+    font-size: 14px; padding: 12px 16px;
+    caret-color: var(--amber);
+  }
+  #username-input::placeholder { color: var(--text-dim); }
+  #join-btn {
+    background: var(--amber); color: var(--bg);
+    border: none; cursor: pointer;
+    font-family: var(--display); font-size: 12px;
+    font-weight: 800; letter-spacing: 0.1em;
+    padding: 12px 20px; text-transform: uppercase;
+    transition: opacity 0.2s;
+  }
+  #join-btn:hover { opacity: 0.85; }
+  #join-error {
+    color: var(--red); font-size: 11px;
+    letter-spacing: 0.06em; min-height: 16px;
+  }
+
+  /* ── Chat area ───────────────────────────────────────── */
+  #chat-screen { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  #chat-screen.active { display: flex; }
+
+  #messages {
+    flex: 1; overflow-y: auto;
+    padding: 16px 24px;
+    scroll-behavior: smooth;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+
+  /* Custom scrollbar */
+  #messages::-webkit-scrollbar { width: 4px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .msg {
+    display: flex; gap: 12px; align-items: baseline;
+    padding: 4px 0; border-bottom: 1px solid transparent;
+    animation: fadeIn 0.15s ease;
+    line-height: 1.6;
+  }
+  .msg:hover { border-bottom-color: var(--border); }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+
+  .msg-time {
+    font-size: 10px; color: var(--text-dim);
+    flex-shrink: 0; width: 48px; text-align: right;
+    padding-top: 2px;
+  }
+  .msg-user {
+    font-weight: 700; flex-shrink: 0;
+    font-size: 12px; letter-spacing: 0.04em;
+  }
+  .msg-user.self { color: var(--amber); }
+  .msg-user.other { color: #7eb8d4; }
+  .msg-sep { color: var(--text-dim); flex-shrink: 0; }
+  .msg-text { color: var(--text); word-break: break-word; }
+
+  /* System messages */
+  .sys-msg {
+    text-align: center; color: var(--text-dim);
+    font-size: 11px; letter-spacing: 0.08em;
+    padding: 8px 0;
+    animation: fadeIn 0.2s ease;
+  }
+  .sys-msg span { padding: 2px 10px; border: 1px solid var(--border); }
+
+  /* Rate limit warning */
+  .rate-msg {
+    text-align: center; color: var(--amber);
+    font-size: 11px; padding: 6px;
+    border: 1px solid var(--amber-dim);
+    background: var(--amber-glow);
+    margin: 4px 0;
+    animation: fadeIn 0.2s ease;
+  }
+
+  /* Typing indicator */
+  #typing-indicator {
+    height: 20px; padding: 0 24px;
+    font-size: 11px; color: var(--text-dim);
+    letter-spacing: 0.06em; font-style: italic;
+    flex-shrink: 0;
+  }
+
+  /* ── Input area ──────────────────────────────────────── */
+  #input-area {
+    display: flex; gap: 0;
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+    transition: box-shadow 0.2s;
+  }
+  #input-area:focus-within {
+    box-shadow: 0 -2px 0 var(--amber);
+  }
+  #prompt-marker {
+    padding: 14px 4px 14px 20px;
+    color: var(--amber); font-size: 14px; flex-shrink: 0;
+    user-select: none;
+  }
+  #msg-input {
+    flex: 1; background: transparent;
+    border: none; outline: none;
+    color: var(--text); font-family: var(--mono);
+    font-size: 13px; padding: 14px 8px;
+    caret-color: var(--amber);
+  }
+  #msg-input::placeholder { color: var(--text-dim); }
+  #char-count {
+    padding: 14px 12px;
+    font-size: 10px; color: var(--text-dim);
+    flex-shrink: 0; align-self: center;
+    letter-spacing: 0.04em;
+    transition: color 0.2s;
+  }
+  #char-count.warn { color: var(--amber); }
+  #char-count.over { color: var(--red); }
+  #send-btn {
+    background: transparent; border: none; border-left: 1px solid var(--border);
+    color: var(--text-dim); cursor: pointer;
+    padding: 14px 20px; font-family: var(--mono);
+    font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: color 0.2s, background 0.2s;
+  }
+  #send-btn:hover:not(:disabled) {
+    color: var(--amber); background: var(--amber-glow);
+  }
+  #send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ─────────────────────────────────────────────── -->
+<div id="topbar">
+  <h1>◈ WS·CHAT</h1>
+  <div id="status-bar">
+    <div id="online-count" style="display:none">0 ONLINE</div>
+    <div id="status-dot"></div>
+    <span id="status-text">DISCONNECTED</span>
+  </div>
+</div>
+
+<!-- ── Main area ──────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- JOIN SCREEN -->
+  <div id="join-screen">
+    <div class="label">// connecting to ws://localhost:3001</div>
+    <h2>Enter the room</h2>
+    <div class="join-box">
+      <input id="username-input" type="text"
+        placeholder="pick a username…"
+        maxlength="20" autocomplete="off" spellcheck="false">
+      <button id="join-btn">JOIN</button>
+    </div>
+    <div id="join-error"></div>
+  </div>
+
+  <!-- CHAT SCREEN -->
+  <div id="chat-screen">
+    <div id="messages"></div>
+    <div id="typing-indicator"></div>
+    <div id="input-area">
+      <span id="prompt-marker">&gt;</span>
+      <input id="msg-input" type="text"
+        placeholder="type a message…"
+        maxlength="500" autocomplete="off" spellcheck="false" disabled>
+      <span id="char-count">0/500</span>
+      <button id="send-btn" disabled>SEND</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/**
+ * ============================================================
+ *  REAL-TIME CHAT CLIENT — WebSockets explained step by step
+ * ============================================================
+ *
+ * STEP A  — What is the browser WebSocket API?
+ * STEP B  — Connection lifecycle (open, message, close, error)
+ * STEP C  — Sending typed JSON messages (protocol)
+ * STEP D  — Handling message types from the server
+ * STEP E  — Reconnection with exponential backoff
+ * STEP F  — Typing indicator with debounce
+ * STEP G  — Character counter & input validation
+ */
+
+// ─────────────────────────────────────────────────────────────
+// STEP A — WebSocket basics
+// ─────────────────────────────────────────────────────────────
+// new WebSocket(url) opens a connection.  Unlike fetch/XHR this
+// is PERSISTENT — the server can push data at any time.
+// The browser automatically sends the HTTP Upgrade handshake.
+//
+// readyState values:
+//   0 = CONNECTING  1 = OPEN  2 = CLOSING  3 = CLOSED
+// ─────────────────────────────────────────────────────────────
+
+const WS_URL = "ws://localhost:3001";
+const MAX_MSG_LEN = 500;
+
+// ── DOM refs ──────────────────────────────────────────────────
+const joinScreen    = document.getElementById("join-screen");
+const chatScreen    = document.getElementById("chat-screen");
+const usernameInput = document.getElementById("username-input");
+const joinBtn       = document.getElementById("join-btn");
+const joinError     = document.getElementById("join-error");
+const messagesEl    = document.getElementById("messages");
+const msgInput      = document.getElementById("msg-input");
+const sendBtn       = document.getElementById("send-btn");
+const statusDot     = document.getElementById("status-dot");
+const statusText    = document.getElementById("status-text");
+const onlineCount   = document.getElementById("online-count");
+const typingEl      = document.getElementById("typing-indicator");
+const charCount     = document.getElementById("char-count");
+
+// ── State ─────────────────────────────────────────────────────
+let ws          = null;
+let myUsername  = null;
+let isJoined    = false;
+let reconnDelay = 1000;       // starts at 1 s, doubles each failure
+let reconnTimer = null;
+let typingTimer = null;       // debounce for "stopped typing"
+let isTypingSent = false;     // tracks whether we sent isTyping=true
+
+// ─────────────────────────────────────────────────────────────
+// STEP B — Connection lifecycle
+// ─────────────────────────────────────────────────────────────
+function connect() {
+  setStatus("connecting");
+
+  // Create a WebSocket connection.
+  // The browser performs:
+  //   GET / HTTP/1.1
+  //   Host: localhost:3001
+  //   Upgrade: websocket
+  //   Connection: Upgrade
+  //   Sec-WebSocket-Key: <random base64>
+  //   Sec-WebSocket-Version: 13
+  //
+  // Server responds with 101 Switching Protocols → socket is live.
+  ws = new WebSocket(WS_URL);
+
+  // ── ws.onopen ─────────────────────────────────────────────
+  // Fires when the handshake completes and data can flow.
+  // We DON'T join yet — we wait for the user to pick a username.
+  ws.onopen = () => {
+    setStatus("connected");
+    reconnDelay = 1000; // reset backoff on successful connection
+    clearTimeout(reconnTimer);
+  };
+
+  // ── ws.onmessage ──────────────────────────────────────────
+  // Fires for EVERY frame the server sends.
+  // event.data is a string (text frame) or Blob/ArrayBuffer (binary).
+  // We always use text + JSON.
+  ws.onmessage = (event) => {
+    let envelope;
+    try { envelope = JSON.parse(event.data); }
+    catch { console.error("Non-JSON from server:", event.data); return; }
+
+    handleMessage(envelope.type, envelope.payload);
+  };
+
+  // ── ws.onclose ────────────────────────────────────────────
+  // Fires when the connection ends — cleanly OR abruptly.
+  // event.code:   1000=normal, 1001=server shutdown, 1006=abnormal
+  // event.wasClean: true only if the WebSocket close handshake
+  //                 (FIN frame exchange) completed.
+  ws.onclose = (event) => {
+    setStatus("error");
+    console.log(`[ws] closed  code=${event.code}  clean=${event.wasClean}`);
+
+    if (isJoined) {
+      // Auto-reconnect with exponential backoff.
+      // Cap at 30 s so we eventually recover from long outages.
+      reconnTimer = setTimeout(() => {
+        reconnDelay = Math.min(reconnDelay * 2, 30_000);
+        connect();
+        if (isJoined) sendJoin(); // re-identify after reconnect
+      }, reconnDelay);
+      appendSys(`⚠ Disconnected — reconnecting in ${reconnDelay/1000}s…`);
+    }
+  };
+
+  // ── ws.onerror ────────────────────────────────────────────
+  // NOTE: The error event gives almost no detail by design
+  // (browser security — same-origin leaking).
+  // A 'close' event always follows onerror.
+  ws.onerror = () => {
+    console.error("[ws] connection error");
+    setStatus("error");
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// STEP C — Sending messages (our typed JSON protocol)
+// ─────────────────────────────────────────────────────────────
+// ws.send() transmits a WebSocket data frame.
+// We always send JSON with { type, payload } so the server
+// can switch on 'type' without guessing the intent.
+// ─────────────────────────────────────────────────────────────
+function sendMsg(type, payload = {}) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type, payload }));
+}
+
+function sendJoin() {
+  if (!myUsername) return;
+  sendMsg("join", { username: myUsername });
+}
+
+// ─────────────────────────────────────────────────────────────
+// STEP D — Handle incoming server messages
+// ─────────────────────────────────────────────────────────────
+function handleMessage(type, payload) {
+  switch (type) {
+
+    // ── welcome: server accepted our join ─────────────────
+    case "welcome":
+      isJoined = true;
+      updateOnlineCount(payload.onlineCount);
+      // Replay history (messages sent before we joined)
+      if (payload.history && payload.history.length > 0) {
+        appendSys(`── ${payload.history.length} message(s) from history ──`);
+        payload.history.forEach(renderChatMsg);
+      }
+      showChat();
+      break;
+
+    // ── chat: a new message from any user ─────────────────
+    case "chat":
+      renderChatMsg(payload);
+      break;
+
+    // ── user_joined / user_left: presence events ──────────
+    case "user_joined":
+      updateOnlineCount(payload.onlineCount);
+      appendSys(`→ ${payload.username} joined`);
+      break;
+
+    case "user_left":
+      updateOnlineCount(payload.onlineCount);
+      appendSys(`← ${payload.username} left`);
+      break;
+
+    // ── typing: real-time "X is typing…" ──────────────────
+    case "typing":
+      showTyping(payload.username, payload.isTyping);
+      break;
+
+    // ── rate_limited: server rejected our message ──────────
+    case "rate_limited":
+      appendRateLimit(payload.message);
+      break;
+
+    // ── error: server-side validation or protocol error ───
+    case "error":
+      // If we haven't joined yet, show in the join form
+      if (!isJoined) { joinError.textContent = payload.message; }
+      else { appendSys(`⚠ ${payload.message}`); }
+      break;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// STEP E — Reconnection with exponential backoff
+// ─────────────────────────────────────────────────────────────
+// Already handled in ws.onclose above.
+// Pattern: wait 1s → 2s → 4s → 8s … → 30s (cap).
+// This prevents thundering-herd: if the server restarts, all
+// clients don't reconnect at exactly the same millisecond.
+// ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+// STEP F — Typing indicator with debounce
+// ─────────────────────────────────────────────────────────────
+// We don't want to send a "typing" event on every keypress.
+// Strategy:
+//   - On keydown: send isTyping=true ONCE (guard with flag)
+//   - After 1.5 s of silence: send isTyping=false
+// ─────────────────────────────────────────────────────────────
+function handleTyping() {
+  if (!isTypingSent) {
+    sendMsg("typing", { isTyping: true });
+    isTypingSent = true;
+  }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    sendMsg("typing", { isTyping: false });
+    isTypingSent = false;
+  }, 1500);
+}
+
+// Active typers map: username → timeout id
+const typers = new Map();
+
+function showTyping(username, active) {
+  if (active) {
+    typers.set(username, setTimeout(() => {
+      typers.delete(username); renderTyping();
+    }, 3000)); // auto-clear after 3 s in case we miss the false event
+  } else {
+    clearTimeout(typers.get(username));
+    typers.delete(username);
+  }
+  renderTyping();
+}
+
+function renderTyping() {
+  const names = [...typers.keys()];
+  if (names.length === 0) { typingEl.textContent = ""; return; }
+  const who = names.slice(0,3).join(", ");
+  const suffix = names.length > 3 ? ` +${names.length-3} more` : "";
+  typingEl.textContent = `${who}${suffix} ${names.length === 1 ? "is" : "are"} typing…`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// STEP G — Character counter & send logic
+// ─────────────────────────────────────────────────────────────
+msgInput.addEventListener("input", () => {
+  const len = msgInput.value.length;
+  charCount.textContent = `${len}/${MAX_MSG_LEN}`;
+  charCount.className = len > MAX_MSG_LEN * 0.9 ? (len >= MAX_MSG_LEN ? "over" : "warn") : "";
+  sendBtn.disabled = len === 0 || len > MAX_MSG_LEN;
+  handleTyping();
+});
+
+msgInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+});
+
+sendBtn.addEventListener("click", doSend);
+
+function doSend() {
+  const text = msgInput.value.trim();
+  if (!text || text.length > MAX_MSG_LEN) return;
+  sendMsg("chat", { text });
+
+  // Clear input and stop typing indicator
+  msgInput.value = "";
+  charCount.textContent = `0/${MAX_MSG_LEN}`;
+  charCount.className = "";
+  sendBtn.disabled = true;
+
+  clearTimeout(typingTimer);
+  if (isTypingSent) {
+    sendMsg("typing", { isTyping: false });
+    isTypingSent = false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// UI helpers
+// ─────────────────────────────────────────────────────────────
+function renderChatMsg(msg) {
+  const isSelf = msg.username === myUsername;
+  const time = new Date(msg.ts).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerHTML = `
+    <span class="msg-time">${escHtml(time)}</span>
+    <span class="msg-user ${isSelf ? "self" : "other"}">${escHtml(msg.username)}</span>
+    <span class="msg-sep">›</span>
+    <span class="msg-text">${escHtml(msg.text)}</span>`;
+  messagesEl.appendChild(div);
+  scrollBottom();
+}
+
+function appendSys(text) {
+  const div = document.createElement("div");
+  div.className = "sys-msg";
+  div.innerHTML = `<span>${escHtml(text)}</span>`;
+  messagesEl.appendChild(div);
+  scrollBottom();
+}
+
+function appendRateLimit(text) {
+  const div = document.createElement("div");
+  div.className = "rate-msg";
+  div.textContent = `⚡ ${text}`;
+  messagesEl.appendChild(div);
+  scrollBottom();
+  setTimeout(() => div.remove(), 3000);
+}
+
+function scrollBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function setStatus(state) {
+  statusDot.className = state;
+  const labels = { connecting:"CONNECTING…", connected:"CONNECTED", error:"DISCONNECTED" };
+  statusText.textContent = labels[state] ?? state.toUpperCase();
+}
+
+function updateOnlineCount(n) {
+  onlineCount.style.display = "block";
+  onlineCount.textContent = `${n} ONLINE`;
+}
+
+function showChat() {
+  joinScreen.style.display = "none";
+  chatScreen.classList.add("active");
+  msgInput.disabled = false;
+  sendBtn.disabled = false;
+  msgInput.focus();
+}
+
+// ─────────────────────────────────────────────────────────────
+// JOIN button
+// ─────────────────────────────────────────────────────────────
+function attemptJoin() {
+  const name = usernameInput.value.trim();
+  if (!name) { joinError.textContent = "Please enter a username"; return; }
+  joinError.textContent = "";
+  myUsername = name;
+  sendJoin();
+}
+
+joinBtn.addEventListener("click", attemptJoin);
+usernameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") attemptJoin();
+});
+
+// ─────────────────────────────────────────────────────────────
+// BOOT — connect on page load
+// ─────────────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>
