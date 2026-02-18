@@ -335,7 +335,9 @@
 //   0 = CONNECTING  1 = OPEN  2 = CLOSING  3 = CLOSED
 // ─────────────────────────────────────────────────────────────
 
-const WS_URL = "wss://real-time-chat-production-030a.up.railway.app";
+const WS_URL = window.location.hostname === "localhost"
+  ? "ws://localhost:3001"
+  : `wss://${window.location.hostname}`;
 const MAX_MSG_LEN = 500;
 
 // ── DOM refs ──────────────────────────────────────────────────
