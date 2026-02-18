@@ -29,12 +29,14 @@
 const { WebSocketServer, WebSocket } = require("ws");
 const http = require("http");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 // ─────────────────────────────────────────────────────────────
 // STEP 1 — Configuration constants
 // ─────────────────────────────────────────────────────────────
 const CONFIG = {
-  PORT: 3001,
+  PORT: process.env.PORT || 3001,
 
   // ── Rate Limiting (token-bucket algorithm) ─────────────────
   // Each client gets a "bucket" that holds up to MAX_TOKENS.
@@ -159,6 +161,17 @@ function validateMessage(text) {
 // that upgrade event, so both HTTP and WS share port 3001.
 // ─────────────────────────────────────────────────────────────
 const httpServer = http.createServer((req, res) => {
+  // Serve the chat UI at the root URL
+  if (req.url === "/" || req.url === "/index.html") {
+    const filePath = path.join(__dirname, "chat-client.html");
+    fs.readFile(filePath, (err, data) => {
+      if (err) { res.writeHead(404); res.end("chat-client.html not found"); return; }
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(data);
+    });
+    return;
+  }
+  // Health check endpoint
   if (req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
